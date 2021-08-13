@@ -115,6 +115,13 @@ PLUGIN_EXPORT void Reload(void* data, void* rm, double* maxValue)
 			g_ParentMeasures.push_back(child->parent);
 		}
 
+		if (!path.empty())
+		{
+			WCHAR fullPath[MAX_PATH];
+			PathCanonicalize(fullPath, path.c_str());
+			path = fullPath;
+		}
+
 		// Add trailing "\" if none exists
 		if (!path.empty() && path[path.size() - 1] != L'\\')
 		{
@@ -468,9 +475,20 @@ PLUGIN_EXPORT LPCWSTR GetString(void* data)
 			break;
 
 		case TYPE_FILEPATH:
-			child->strValue = (_wcsicmp(parent->files[trueIndex].fileName.c_str(), L"..") == 0) ?
-				parent->path :
-				parent->files[trueIndex].path + parent->files[trueIndex].fileName;
+			if (_wcsicmp(parent->files[trueIndex].fileName.c_str(), L"..") == 0)
+			{
+				std::wstring tmp = parent->path;
+				GetParentFolder(tmp);
+				child->strValue = tmp;
+			}
+			else if (_wcsicmp(parent->files[trueIndex].fileName.c_str(), L".") == 0)
+			{
+				child->strValue = parent->files[trueIndex].path;
+			}
+			else
+			{
+				child->strValue = parent->files[trueIndex].path + parent->files[trueIndex].fileName;
+			}
 			break;
 
 		case TYPE_PATHTOFILE:
@@ -814,13 +832,6 @@ unsigned __stdcall SystemThreadProc(void* pParam)
 		}
 		else
 		{
-			if (tmp->showDotDot && tmp->recursiveType != RECURSIVE_FULL)
-			{
-				file.fileName = L"..";
-				file.isFolder = true;
-
-				tmp->files.push_back(file);
-			}
 
 			std::queue<std::wstring> folderQueue;
 			std::wstring folder = tmp->path;
@@ -838,7 +849,7 @@ unsigned __stdcall SystemThreadProc(void* pParam)
 
 		// Sort
 		const int sortAsc = tmp->sortAscending ? 1 : -1;
-		auto begin = (!tmp->path.empty() && 
+		auto begin = (!tmp->files.empty() && 
 			(tmp->showDotDot && tmp->recursiveType != RECURSIVE_FULL)) ? tmp->files.begin() + 1: tmp->files.begin();
 
 		switch (tmp->sortType)
@@ -965,7 +976,14 @@ unsigned __stdcall SystemThreadProc(void* pParam)
 			if (iter->type == TYPE_ICON && trueIndex >= 0 && trueIndex < (int)tmp->files.size())
 			{
 				std::wstring filePath = tmp->files[trueIndex].path;
-				filePath += (tmp->files[trueIndex].fileName == L"..") ? L"" :tmp->files[trueIndex].fileName;
+				if (tmp->files[trueIndex].fileName == L"..")
+				{
+					GetParentFolder(filePath);
+				}
+				else if (tmp->files[trueIndex].fileName != L".")
+				{
+					filePath += tmp->files[trueIndex].fileName;
+				}
 				GetIcon(filePath, iter->iconPath, iter->iconSize);
 			}
 			else if (iter->type == TYPE_ICON)
@@ -994,6 +1012,9 @@ unsigned __stdcall SystemThreadProc(void* pParam)
 
 void GetFolderInfo(std::queue<std::wstring>& folderQueue, std::wstring& folder, ParentMeasure* parent, RecursiveType rType)
 {
+	if (parent->wildcardSearch.find_first_of(L"\\") != std::wstring::npos)
+		return;
+
 	std::wstring path = folder;
 	folder += (rType == RECURSIVE_NONE) ? parent->wildcardSearch : L"*";
 
@@ -1005,15 +1026,28 @@ void GetFolderInfo(std::queue<std::wstring>& folderQueue, std::wstring& folder, 
 		{
 			FileInfo file;
 
-			file.fileName = fd.cFileName;
-			if (_wcsicmp(file.fileName.c_str(), L".") == 0 || _wcsicmp(file.fileName.c_str(), L"..") == 0)
+			if (_wcsicmp(parent->wildcardSearch.c_str(), L"..") == 0)
 			{
-				continue;
+				file.fileName = L"..";
 			}
+			else if (_wcsicmp(parent->wildcardSearch.c_str(), L".") == 0)
+			{
+				file.fileName = L".";
+			}
+			else
+			{
+				file.fileName = fd.cFileName;
+			}
+			bool isDot = (_wcsicmp(file.fileName.c_str(), L"..") == 0 || _wcsicmp(file.fileName.c_str(), L".") == 0);
 
 			file.isFolder = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) > 0;
 			bool isHidden = (fd.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) > 0;
 			bool isSystem = (fd.dwFileAttributes & FILE_ATTRIBUTE_SYSTEM) > 0;
+
+			if (file.fileName == L".." && !parent->showDotDot)
+			{
+				continue;
+			}
 
 			if (rType == RECURSIVE_FULL && parent->wildcardSearch != L"*" && !file.isFolder)
 			{
@@ -1064,12 +1098,15 @@ void GetFolderInfo(std::queue<std::wstring>& folderQueue, std::wstring& folder, 
 
 			if (file.isFolder)
 			{
-				if (rType != RECURSIVE_FULL)
+				if (!isDot)
 				{
-					++parent->folderCount;
-				}
+					if (rType != RECURSIVE_FULL)
+					{
+						++parent->folderCount;
+					}
 
-				folderQueue.push(path + file.fileName + L"\\");
+					folderQueue.push(path + file.fileName + L"\\");
+				}
 			}
 			else
 			{
@@ -1077,7 +1114,10 @@ void GetFolderInfo(std::queue<std::wstring>& folderQueue, std::wstring& folder, 
 				file.size = ((UINT64)fd.nFileSizeHigh << 32) + fd.nFileSizeLow;
 			}
 
-			parent->folderSize += file.size;
+			if (!isDot)
+			{
+				parent->folderSize += file.size;
+			}
 
 			file.createdTime = fd.ftCreationTime;
 			file.modifiedTime = fd.ftLastWriteTime;
