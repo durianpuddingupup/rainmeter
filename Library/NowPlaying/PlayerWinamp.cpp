@@ -21,12 +21,11 @@ Player* PlayerWinamp::c_Player = nullptr;
 */
 PlayerWinamp::PlayerWinamp(WINAMPTYPE type) : Player(),
 	m_Window(),
-	m_LastCheckTime(0),
+	m_LastCheckTime(0ULL),
 	m_UseUnicodeAPI(false),
 	m_PlayingStream(false),
 	m_WinampType(type),
-	m_WinampHandle(),
-	m_WinampAddress()
+	m_WinampHandle()
 {
 }
 
@@ -60,24 +59,23 @@ Player* PlayerWinamp::Create(WINAMPTYPE type)
 */
 bool PlayerWinamp::CheckWindow()
 {
-	DWORD time = GetTickCount();
+	ULONGLONG time = GetTickCount64();
 
 	// Try to find Winamp window every 5 seconds
-	if (time - m_LastCheckTime > 5000)
+	if (time - m_LastCheckTime > 5000ULL)
 	{
 		m_LastCheckTime = time;
 
 		m_Window = FindWindow(L"Winamp v1.x", nullptr);
 		if (m_Window)
 		{
-			DWORD pID;
+			DWORD pID = 0;
 			GetWindowThreadProcessId(m_Window, &pID);
 			m_WinampHandle = OpenProcess(PROCESS_VM_READ, FALSE, pID);
 
 			if (m_WinampHandle)
 			{
-				m_WinampAddress = (LPCVOID)SendMessage(m_Window, WM_WA_IPC, 0, IPC_GET_PLAYING_FILENAME);
-				m_UseUnicodeAPI = m_WinampAddress ? true : false;
+				m_UseUnicodeAPI = (LPCVOID)SendMessage(m_Window, WM_WA_IPC, 0, IPC_GET_PLAYING_FILENAME) ? true : false;
 				m_Initialized = true;
 			}
 		}
@@ -125,7 +123,8 @@ void PlayerWinamp::UpdateData()
 
 		if (m_UseUnicodeAPI)
 		{
-			if (!ReadProcessMemory(m_WinampHandle, m_WinampAddress, &wBuffer, sizeof(wBuffer), nullptr))
+			LPCVOID address = (LPCVOID)SendMessage(m_Window, WM_WA_IPC, 0, IPC_GET_PLAYING_FILENAME);
+			if (!ReadProcessMemory(m_WinampHandle, address, &wBuffer, sizeof(wBuffer), nullptr))
 			{
 				// Failed to read memory
 				return;

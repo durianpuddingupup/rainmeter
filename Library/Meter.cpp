@@ -41,6 +41,8 @@ Meter::Meter(Skin* skin, const WCHAR* name) : Section(skin, name),
 	m_RelativeX(POSITION_ABSOLUTE),
 	m_RelativeY(POSITION_ABSOLUTE),
 	m_SolidBevel(BEVELTYPE_NONE),
+	m_BevelColor(Gfx::Util::c_Transparent_Color_F),
+	m_BevelColor2(Gfx::Util::c_Transparent_Color_F),
 	m_SolidAngle(),
 	m_Padding(),
 	m_AntiAlias(false),
@@ -169,14 +171,9 @@ void Meter::SetY(int y)
 */
 RECT Meter::GetMeterRect()
 {
-	RECT meterRect;
-
-	meterRect.left = GetX();
-	meterRect.top = GetY();
-	meterRect.right = meterRect.left + m_W;
-	meterRect.bottom = meterRect.top + m_H;
-
-	return meterRect;
+	int x = GetX();
+	int y = GetY();
+	return { x, y, x + m_W, y + m_H };
 }
 
 /*
@@ -185,13 +182,31 @@ RECT Meter::GetMeterRect()
 */
 D2D1_RECT_F Meter::GetMeterRectPadding()
 {
-	D2D1_RECT_F meterRect;
-	meterRect.left = GetX() + m_Padding.left;
-	meterRect.top = GetY() + m_Padding.top;
-	meterRect.right = meterRect.left + m_W - m_Padding.right;
-	meterRect.bottom = meterRect.top + m_H - m_Padding.bottom;
+	RECT rect = GetMeterRect();
+	return D2D1::RectF(
+		rect.left + m_Padding.left,
+		rect.top + m_Padding.top,
+		rect.right + m_Padding.left - m_Padding.right,
+		rect.bottom + m_Padding.top - m_Padding.bottom);
+}
 
-	return meterRect;
+/*
+** Returns the visible portion of the meter or the meter's bounds
+**
+*/
+bool Meter::GetMeterVisibleRect(RECT& rect)
+{
+	rect = GetMeterRect();
+	if (!m_ContainerMeter) return true;
+
+	const RECT cRect = m_ContainerMeter->GetMeterRect();
+	RECT dest = { 0 };
+	if (IntersectRect(&dest, &rect, &cRect))
+	{
+		rect = dest;
+		return true;
+	}
+	return false;
 }
 
 /*
@@ -412,6 +427,8 @@ void Meter::ReadOptions(ConfigParser& parser, const WCHAR* section)
 	}
 
 	m_SolidBevel = (BEVELTYPE)parser.ReadInt(section, L"BevelType", BEVELTYPE_NONE);
+	m_BevelColor = parser.ReadColor(section, L"BevelColor", D2D1::ColorF(D2D1::ColorF::White));
+	m_BevelColor2 = parser.ReadColor(section, L"BevelColor2", D2D1::ColorF(D2D1::ColorF::Black));
 
 	m_SolidColor = parser.ReadColor(section, L"SolidColor", Gfx::Util::c_Transparent_Color_F);
 	m_SolidColor2 = parser.ReadColor(section, L"SolidColor2", m_SolidColor);
@@ -691,7 +708,10 @@ void Meter::CreateToolTip(Skin* skin)
 	{
 		SetWindowPos(hwndTT, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
-		TOOLINFO ti = {sizeof(TOOLINFO), TTF_SUBCLASS, hSkin, 0, GetMeterRect(), hInstance};
+		RECT rc = { 0 };
+		GetMeterVisibleRect(rc);
+
+		TOOLINFO ti = { sizeof(TOOLINFO), TTF_SUBCLASS, hSkin, 0ULL, rc, hInstance };
 
 		SendMessage(hwndTT, TTM_ADDTOOL, 0, (LPARAM)&ti);
 
@@ -766,12 +786,13 @@ void Meter::UpdateToolTip()
 	text = m_ToolTipText;
 	ReplaceMeasures(text);
 	ti.lpszText = (LPTSTR)text.c_str();
-	ti.rect = GetMeterRect();
+
+	const bool isVisible = GetMeterVisibleRect(ti.rect);
 
 	SendMessage(hwndTT, TTM_SETTOOLINFO, 0, (LPARAM)&ti);
 	SendMessage(hwndTT, TTM_SETMAXTIPWIDTH, 0, m_ToolTipWidth);
 
-	if (m_ToolTipHidden || m_ToolTipDisabled)
+	if (m_ToolTipHidden || m_ToolTipDisabled || !isVisible)
 	{
 		SendMessage(hwndTT, TTM_ACTIVATE, FALSE, 0);
 	}
@@ -810,20 +831,23 @@ bool Meter::Draw(Gfx::Canvas& canvas)
 
 	if (m_SolidBevel != BEVELTYPE_NONE)
 	{
-		D2D1_COLOR_F lightColor = D2D1::ColorF(D2D1::ColorF::White);
-		D2D1_COLOR_F darkColor = D2D1::ColorF(D2D1::ColorF::Black);
+		D2D1_COLOR_F lightColor = m_BevelColor;
+		D2D1_COLOR_F darkColor = m_BevelColor2;
 		
 		if (m_SolidBevel == BEVELTYPE_DOWN)
 		{
-			lightColor = D2D1::ColorF(D2D1::ColorF::Black);
-			darkColor = D2D1::ColorF(D2D1::ColorF::White);
+			std::swap(lightColor, darkColor);
 		}
 
 		// The bevel is drawn outside the meter
 		const FLOAT x = (FLOAT)GetX();
 		const FLOAT y = (FLOAT)GetY();
-		const D2D1_RECT_F rect = D2D1::RectF(x - 2.0f, y - 2.0f, x + (FLOAT)m_W + 2.0f, y + (FLOAT)m_H + 2.0f);
-		DrawBevel(canvas, rect, lightColor, darkColor);
+		const D2D1_RECT_F rect = D2D1::RectF(
+			x - 2.0f,
+			y - 2.0f,
+			x + (FLOAT)m_W + 2.0f,
+			y + (FLOAT)m_H + 2.0f);
+		DrawBevel(canvas, rect, lightColor, darkColor, m_AntiAlias);
 	}
 
 	return true;
@@ -832,19 +856,24 @@ bool Meter::Draw(Gfx::Canvas& canvas)
 /*
 ** Draws a bevel inside the given area
 */
-void Meter::DrawBevel(Gfx::Canvas& canvas, const D2D1_RECT_F& rect, const D2D1_COLOR_F& light, const D2D1_COLOR_F& dark)
+void Meter::DrawBevel(Gfx::Canvas& canvas, const D2D1_RECT_F& rect, const D2D1_COLOR_F& light, const D2D1_COLOR_F& dark, const bool offsetMode)
 {
-	const FLOAT l = rect.left;
-	const FLOAT r = rect.right - 1.0f;
-	const FLOAT t = rect.top;
-	const FLOAT b = rect.bottom - 1.0f;
+	// Simulate GDI+ "PixelOffsetModeHalf" offset mode
+	const FLOAT offset = offsetMode ? 0.0f : 0.5f;
 
-	canvas.DrawLine(light, l,        t,        l,        b,        2.0f);
-	canvas.DrawLine(light, l,        t,        r,        t,        2.0f);
-	canvas.DrawLine(light, l + 1.0f, t + 1.0f, l + 1.0f, b - 1.0f, 2.0f);
-	canvas.DrawLine(light, l + 1.0f, t + 1.0f, r - 1.0f, t + 1.0f, 2.0f);
-	canvas.DrawLine(dark,  l,        b,        r,        b,        2.0f);
-	canvas.DrawLine(dark,  r,        t,        r,        b,        2.0f);
-	canvas.DrawLine(dark,  l + 1.0f, b - 1.0f, r - 1.0f, b - 1.0f, 2.0f);
-	canvas.DrawLine(dark,  r - 1.0f, t + 1.0f, r - 1.0f, b - 1.0f, 2.0f);
+	const FLOAT w = 1.0f;
+	const FLOAT l = rect.left + offset;
+	const FLOAT t = rect.top + offset;
+	const FLOAT r = rect.right;
+	const FLOAT b = rect.bottom;
+
+	canvas.DrawLine(light, l,     t,     l,     b,     w);
+	canvas.DrawLine(light, l,     t,     r,     t,     w);
+	canvas.DrawLine(light, l + w, t,     l + w, b - w, w);
+	canvas.DrawLine(light, l,     t + w, r - w, t + w, w);
+
+	canvas.DrawLine(dark,  l,     b,     r,     b,     w);
+	canvas.DrawLine(dark,  r,     t,     r,     b,     w);
+	canvas.DrawLine(dark,  l + w, b - w, r - w, b - w, w);
+	canvas.DrawLine(dark,  r - w, t + w, r - w, b - w, w);
 }

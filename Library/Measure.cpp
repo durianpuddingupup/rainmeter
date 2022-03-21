@@ -26,8 +26,10 @@
 #include "MeasureTime.h"
 #include "MeasureCalc.h"
 #include "MeasureScript.h"
+#include "MeasureSysInfo.h"
 #include "MeasureLoop.h"
 #include "MeasureWebParser.h"
+#include "MeasureWifiStatus.h"
 #include "Rainmeter.h"
 #include "Util.h"
 #include "pcre/config.h"
@@ -801,6 +803,10 @@ Measure* Measure::Create(const WCHAR* measure, Skin* skin, const WCHAR* name)
 	{
 		return new MeasureString(skin, name);
 	}
+	else if (_wcsicmp(L"SysInfo", measure) == 0)
+	{
+		return new MeasureSysInfo(skin, name);
+	}
 	else if (_wcsicmp(L"Loop", measure) == 0)
 	{
 		return new MeasureLoop(skin, name);
@@ -808,6 +814,10 @@ Measure* Measure::Create(const WCHAR* measure, Skin* skin, const WCHAR* name)
 	else if (_wcsicmp(L"WebParser", measure) == 0)
 	{
 		return new MeasureWebParser(skin, name);
+	}
+	else if (_wcsicmp(L"WifiStatus", measure) == 0)
+	{
+		return new MeasureWifiStatus(skin, name);
 	}
 
 	LogErrorF(skin, L"Measure=%s is not valid in [%s]", measure, name);

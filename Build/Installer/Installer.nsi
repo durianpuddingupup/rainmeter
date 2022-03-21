@@ -479,10 +479,6 @@ Function PageOptions
 		SendMessage $0 ${BCM_SETSHIELD} 0 0
 	${Else}
 		SendMessage $0 ${BCM_SETSHIELD} 0 1
-
-		; Hide Back button
-		GetDlgItem $0 $HWNDPARENT 3
-		ShowWindow $0 ${SW_HIDE}
 	${EndIf}
 
 	nsDialogs::Show
@@ -739,15 +735,9 @@ SkipIniMove:
 		; Get rid of approximate install size, which we wrote out in the past.
 		DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Rainmeter" "EstimatedSize"
 
-!ifdef BETA
-		WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Rainmeter" "DisplayName" "Rainmeter (beta)"
-		WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Rainmeter" "DisplayVersion" "${VERSION_FULL}"
-		WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Rainmeter" "ReleaseType" "Beta release"
-!else
 		WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Rainmeter" "DisplayName" "Rainmeter"
 		WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Rainmeter" "DisplayVersion" "${VERSION_SHORT}"
-		WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Rainmeter" "ReleaseType" "Final release"
-!endif
+		WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Rainmeter" "ReleaseType" "Release"
 
 		; Create .rmskin association
 		WriteRegStr HKCR ".rmskin" "" "Rainmeter.SkinInstaller"
@@ -837,7 +827,9 @@ Function HandlePlugins
 	${OrIf} $R7 == "NowPlaying.dll"
 	${OrIf} $R7 == "Process.dll"
 	${OrIf} $R7 == "RecycleManager.dll"
+	${OrIf} $R7 == "SysInfo.dll"
 	${OrIf} $R7 == "WebParser.dll"
+	${OrIf} $R7 == "WifiStatus.dll"
 		Delete "$R9"
 	${ElseIf} $R7 != "ActionTimer.dll"
 	${AndIf} $R7 != "AdvancedCPU.dll"
@@ -855,10 +847,8 @@ Function HandlePlugins
 	${AndIf} $R7 != "ResMon.dll"
 	${AndIf} $R7 != "RunCommand.dll"
 	${AndIf} $R7 != "SpeedFanPlugin.dll"
-	${AndIf} $R7 != "SysInfo.dll"
 	${AndIf} $R7 != "UsageMonitor.dll"
 	${AndIf} $R7 != "VirtualDesktops.dll"
-	${AndIf} $R7 != "WifiStatus.dll"
 	${AndIf} $R7 != "Win7AudioPlugin.dll"
 	${AndIf} $R7 != "WindowMessagePlugin.dll"
 		CreateDirectory "$INSTDIR\Defaults\Plugins"

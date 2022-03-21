@@ -38,11 +38,13 @@ public:
 	virtual int GetH() { return m_Hidden ? 0 : m_H; }
 	virtual int GetX(bool abs = false);
 	virtual int GetY(bool abs = false);
-	RECT GetMeterRect();
 
+	RECT GetMeterRect();
 	D2D1_RECT_F GetMeterRectPadding();
 	int GetWidthPadding() { return (int)m_Padding.right; }
 	int GetHeightPadding() { return (int)m_Padding.bottom; }
+
+	bool GetMeterVisibleRect(RECT& rect);
 
 	Gfx::RenderTexture* GetContainerContentTexture() { return m_ContainerContentTexture; }
 	Gfx::RenderTexture* GetContainerTexture() { return m_ContainerTexture; }
@@ -90,7 +92,7 @@ public:
 
 	static Meter* Create(const WCHAR* meter, Skin* skin, const WCHAR* name);
 	
-	static void DrawBevel(Gfx::Canvas& canvas, const D2D1_RECT_F& rect, const D2D1_COLOR_F& light, const D2D1_COLOR_F& dark);
+	static void DrawBevel(Gfx::Canvas& canvas, const D2D1_RECT_F& rect, const D2D1_COLOR_F& light, const D2D1_COLOR_F& dark, const bool offsetMode);
 
 protected:
 
@@ -156,6 +158,9 @@ protected:
 	METER_POSITION m_RelativeY;
 
 	BEVELTYPE m_SolidBevel;
+	D2D1_COLOR_F m_BevelColor;
+	D2D1_COLOR_F m_BevelColor2;
+
 	D2D1_COLOR_F m_SolidColor;
 	D2D1_COLOR_F m_SolidColor2;
 	FLOAT m_SolidAngle;

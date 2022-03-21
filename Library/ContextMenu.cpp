@@ -181,32 +181,48 @@ void ContextMenu::ShowMenu(POINT pos, Skin* skin)
 	}
 	else
 	{
-		InsertMenu(menu, 13, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
-
 		// Create a menu for all active skins
 		int index = 0;
 		std::map<std::wstring, Skin*>::const_iterator iter = rainmeter.m_Skins.begin();
 		for (; iter != rainmeter.m_Skins.end(); ++iter)
 		{
+			if (index == 0)
+			{
+				InsertMenu(menu, 13, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
+			}
+
 			Skin* skin = ((*iter).second);
 			HMENU skinMenu = CreateSkinMenu(skin, index, allSkinsMenu);
 			InsertMenu(menu, 13, MF_BYPOSITION | MF_POPUP, (UINT_PTR)skinMenu, skin->GetFolderPath().c_str());
 			++index;
 		}
 
+		bool newVersion = rainmeter.GetNewVersion();
+		bool downloadedNewVersion = rainmeter.GetDownloadedNewVersion();
+		bool obsoleteLanguage = rainmeter.GetLanguageStatus();
+		int sepPos = 0;
+
 		// Add update notification item
-		if (rainmeter.GetNewVersion())
+		if (newVersion || downloadedNewVersion)
 		{
-			InsertMenu(menu, 0, MF_BYPOSITION, IDM_NEW_VERSION, GetString(ID_STR_UPDATEAVAILABLE));
+			UINT_PTR idm = downloadedNewVersion ? IDM_INSTALL_NEW_VERSION : IDM_NEW_VERSION;
+			WCHAR * str = GetString(downloadedNewVersion ? ID_STR_INSTALL_NEW_VERSION : ID_STR_UPDATEAVAILABLE);
+			InsertMenu(menu, 0, MF_BYPOSITION, idm, str);
 			HiliteMenuItem(rainmeter.GetTrayIcon()->GetWindow(), menu, 0, MF_BYPOSITION | MF_HILITE);
-			InsertMenu(menu, 1, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
+			++sepPos;
 		}
 
 		// Add language status if obsolete
-		if (rainmeter.GetLanguageStatus())
+		if (obsoleteLanguage)
 		{
-			InsertMenu(menu, !rainmeter.m_NewVersion ? 0 : 1, MF_BYPOSITION, IDM_LANGUAGEOBSOLETE, GetString(ID_STR_LANGUAGEOBSOLETE));
-			if (!rainmeter.GetNewVersion()) InsertMenu(menu, 1, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
+			InsertMenu(menu, !newVersion ? 0 : 1, MF_BYPOSITION, IDM_LANGUAGEOBSOLETE, GetString(ID_STR_LANGUAGEOBSOLETE));
+			++sepPos;
+		}
+
+		// Add separator if necessary
+		if (sepPos > 0)
+		{
+			InsertMenu(menu, sepPos, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
 		}
 	}
 
@@ -298,17 +314,18 @@ HMENU ContextMenu::CreateSkinMenu(Skin* skin, int index, HMENU menu)
 				MENU_ITEM(IDM_SKIN_TRANSPARENCY_70, ID_STR_70PERCENT),
 				MENU_ITEM(IDM_SKIN_TRANSPARENCY_80, ID_STR_80PERCENT),
 				MENU_ITEM(IDM_SKIN_TRANSPARENCY_90, ID_STR_90PERCENT),
-				MENU_ITEM(IDM_SKIN_TRANSPARENCY_100, ID_STR_100PERCENT),
-				MENU_SEPARATOR(),
+				MENU_ITEM(IDM_SKIN_TRANSPARENCY_100, ID_STR_100PERCENT)),
+			MENU_SUBMENU(ID_STR_ONHOVER,
+				MENU_ITEM(IDM_SKIN_HIDEONMOUSE_NONE, ID_STR_DONOTHING),
+				MENU_ITEM(IDM_SKIN_HIDEONMOUSE, ID_STR_HIDE),
 				MENU_ITEM(IDM_SKIN_TRANSPARENCY_FADEIN, ID_STR_FADEIN),
 				MENU_ITEM(IDM_SKIN_TRANSPARENCY_FADEOUT, ID_STR_FADEOUT)),
 			MENU_SEPARATOR(),
-			MENU_ITEM(IDM_SKIN_HIDEONMOUSE, ID_STR_HIDEONMOUSEOVER),
+			MENU_ITEM(IDM_SKIN_CLICKTHROUGH, ID_STR_CLICKTHROUGH),
 			MENU_ITEM(IDM_SKIN_DRAGGABLE, ID_STR_DRAGGABLE),
+			MENU_ITEM(IDM_SKIN_KEEPONSCREEN, ID_STR_KEEPONSCREEN),
 			MENU_ITEM(IDM_SKIN_REMEMBERPOSITION, ID_STR_SAVEPOSITION),
 			MENU_ITEM(IDM_SKIN_SNAPTOEDGES, ID_STR_SNAPTOEDGES),
-			MENU_ITEM(IDM_SKIN_CLICKTHROUGH, ID_STR_CLICKTHROUGH),
-			MENU_ITEM(IDM_SKIN_KEEPONSCREEN, ID_STR_KEEPONSCREEN),
 			MENU_ITEM(IDM_SKIN_FAVORITE, ID_STR_FAVORITE)),
 		MENU_SEPARATOR(),
 		MENU_ITEM(IDM_SKIN_MANAGESKIN, ID_STR_MANAGESKIN),
@@ -359,39 +376,19 @@ HMENU ContextMenu::CreateSkinMenu(Skin* skin, int index, HMENU menu)
 				checkPos = max(0, checkPos);
 				CheckMenuRadioItem(alphaMenu, checkPos, checkPos, checkPos, MF_BYPOSITION);
 			}
+		}
 
-			switch (skin->GetWindowHide())
-			{
-			case HIDEMODE_FADEIN:
-				CheckMenuItem(alphaMenu, IDM_SKIN_TRANSPARENCY_FADEIN, MF_BYCOMMAND | MF_CHECKED);
-				EnableMenuItem(alphaMenu, IDM_SKIN_TRANSPARENCY_FADEOUT, MF_BYCOMMAND | MF_GRAYED);
-				break;
-
-			case HIDEMODE_FADEOUT:
-				CheckMenuItem(alphaMenu, IDM_SKIN_TRANSPARENCY_FADEOUT, MF_BYCOMMAND | MF_CHECKED);
-				EnableMenuItem(alphaMenu, IDM_SKIN_TRANSPARENCY_FADEIN, MF_BYCOMMAND | MF_GRAYED);
-				break;
-
-			case HIDEMODE_HIDE:
-				EnableMenuItem(alphaMenu, IDM_SKIN_TRANSPARENCY_FADEIN, MF_BYCOMMAND | MF_GRAYED);
-				EnableMenuItem(alphaMenu, IDM_SKIN_TRANSPARENCY_FADEOUT, MF_BYCOMMAND | MF_GRAYED);
-				break;
-			}
+		// Tick the mouse over options (On hover)
+		HMENU hoverMenu = GetSubMenu(settingsMenu, 2);
+		if (hoverMenu)
+		{
+			int mode = skin->GetWindowHide();
+			mode = min(3, mode);
+			mode = max(0, mode);
+			CheckMenuRadioItem(hoverMenu, mode, mode, mode, MF_BYPOSITION);
 		}
 
 		// Tick the settings
-		switch (skin->GetWindowHide())
-		{
-		case HIDEMODE_HIDE:
-			CheckMenuItem(settingsMenu, IDM_SKIN_HIDEONMOUSE, MF_BYCOMMAND | MF_CHECKED);
-			break;
-
-		case HIDEMODE_FADEIN:
-		case HIDEMODE_FADEOUT:
-			EnableMenuItem(settingsMenu, IDM_SKIN_HIDEONMOUSE, MF_BYCOMMAND | MF_GRAYED);
-			break;
-		}
-
 		if (skin->GetSnapEdges())
 		{
 			CheckMenuItem(settingsMenu, IDM_SKIN_SNAPTOEDGES, MF_BYCOMMAND | MF_CHECKED);

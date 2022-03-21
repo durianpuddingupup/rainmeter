@@ -13,6 +13,7 @@
 #include "MeasureNet.h"
 #include "../Common/PathUtil.h"
 #include <TlHelp32.h>
+#include <WtsApi32.h>
 
 using namespace Gdiplus;
 
@@ -88,6 +89,8 @@ void System::Initialize(HINSTANCE instance)
 		instance,
 		nullptr);
 
+	WTSRegisterSessionNotification(c_Window, NOTIFY_FOR_THIS_SESSION);
+
 	SetWindowPos(c_Window, HWND_BOTTOM, 0, 0, 0, 0, ZPOS_FLAGS);
 	SetWindowPos(c_HelperWindow, HWND_BOTTOM, 0, 0, 0, 0, ZPOS_FLAGS);
 
@@ -133,6 +136,7 @@ void System::Finalize()
 
 	if (c_Window)
 	{
+		WTSUnRegisterSessionNotification(c_Window);
 		DestroyWindow(c_Window);
 		c_Window = nullptr;
 	}
@@ -983,35 +987,23 @@ LRESULT CALLBACK System::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
 		}
 		return TRUE;
 
+	case WM_WTSSESSION_CHANGE:
+		LogDebugF(L"System: User session change detected! Session ID: 0x%08X Type: 0x%08X", lParam, wParam);
+		if (GetRainmeter().IsRedrawable())
+		{
+			std::map<std::wstring, Skin*>::const_iterator iter = GetRainmeter().GetAllSkins().begin();
+			for (; iter != GetRainmeter().GetAllSkins().end(); ++iter)
+			{
+				(*iter).second->RedrawWindow();
+			}
+		}
+		break;
+
 	default:
 		return DefWindowProc(hWnd, uMsg, wParam, lParam);
 	}
 
 	return 0;
-}
-
-/*
-** Retrieves the number of milliseconds that have elapsed since the system was started.
-** In XP, returns the predictive value due to the 32bit limitation.
-**
-*/
-ULONGLONG System::GetTickCount64()
-{
-	static auto s_GetTickCount64 =
-		(decltype(GetTickCount64)*)GetProcAddress(GetModuleHandle(L"kernel32"), "GetTickCount64");
-
-	if (s_GetTickCount64)
-	{
-		return s_GetTickCount64();
-	}
-	else
-	{
-		static ULONGLONG lastTicks = 0;
-		ULONGLONG ticks = GetTickCount();
-		while (ticks < lastTicks) ticks += 0x100000000;
-		lastTicks = ticks;
-		return ticks;
-	}
 }
 
 /*

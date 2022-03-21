@@ -133,6 +133,8 @@ public:
 	bool HandleContainer(Meter* container);
 	void ResetRelativeMeters() { m_ResetRelativeMeters = true; }
 
+	void SetZPosVariable(ZPOSITION zPos);
+
 	void SetMouseLeaveEvent(bool cancel);
 	void SetHasMouseScrollAction() { m_HasMouseScrollAction = true; }
 
@@ -281,7 +283,7 @@ private:
 		OPTION_FADEDURATION     = 0x00000004,
 		OPTION_CLICKTHROUGH     = 0x00000008,
 		OPTION_DRAGGABLE        = 0x00000010,
-		OPTION_HIDEONMOUSEOVER  = 0x00000020,
+		OPTION_ONHOVER          = 0x00000020,
 		OPTION_SAVEPOSITION     = 0x00000040,
 		OPTION_SNAPEDGES        = 0x00000080,
 		OPTION_KEEPONSCREEN     = 0x00000100,
@@ -319,7 +321,7 @@ private:
 	void SetSnapEdges(bool b);
 	void UpdateFadeDuration();
 	void SetWindowHide(HIDEMODE hide);
-	void SetWindowZPosition(ZPOSITION zpos);
+	void SetWindowZPosition(ZPOSITION zPos);
 	bool DoAction(int x, int y, MOUSEACTION action, bool test);
 	bool DoMoveAction(int x, int y, MOUSEACTION action);
 	bool ResizeWindow(bool reset);
@@ -340,6 +342,8 @@ private:
 
 	void Dispose(bool refresh);
 	void CreateDoubleBuffer(int cx, int cy);
+
+	bool IsNetworkMeasure(Measure* measure);
 
 	bool m_IsFirstRun;  // Skin has no settings in Rainmeter.ini
 
@@ -421,7 +425,10 @@ private:
 	D2D1_COLOR_F m_SolidColor;
 	D2D1_COLOR_F m_SolidColor2;
 	FLOAT m_SolidAngle;
+
 	BEVELTYPE m_SolidBevel;
+	D2D1_COLOR_F m_BevelColor;
+	D2D1_COLOR_F m_BevelColor2;
 
 	bool m_OldWindowDraggable;
 	bool m_OldKeepOnScreen;

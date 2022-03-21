@@ -47,12 +47,11 @@ private:
 	static Player* c_Player;
 
 	HWND m_Window;				// Winamp window
-	DWORD m_LastCheckTime;
+	ULONGLONG m_LastCheckTime;
 	bool m_UseUnicodeAPI;
 	bool m_PlayingStream;
 	WINAMPTYPE m_WinampType;
 	HANDLE m_WinampHandle;		// Handle to Winamp process
-	LPCVOID m_WinampAddress;
 };
 
 #endif

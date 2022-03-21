@@ -7,10 +7,11 @@
 
 #include "StdAfx.h"
 #include "DialogPackage.h"
-#include "../Common/StringUtil.h"
 #include "SkinInstaller.h"
 #include "DialogInstall.h"
 #include "resource.h"
+#include "../Common/FileUtil.h"
+#include "../Common/StringUtil.h"
 #include "../Version.h"
 
 #include "iowin32.h"
@@ -535,9 +536,7 @@ bool DialogPackage::AddFolderToPackage(const std::wstring& path, std::wstring ba
 
 void DialogPackage::ShowHelp()
 {
-	const WCHAR* url = revision_beta ?
-		L"https://docs.rainmeter.net/manual-beta/distributing-skins/" :
-		L"https://docs.rainmeter.net/manual/distributing-skins/";
+	const WCHAR* url = L"https://docs.rainmeter.net/manual/distributing-skins/";
 	ShellExecute(m_Window, L"open", url, nullptr, nullptr, SW_SHOWNORMAL);
 }
 
@@ -753,12 +752,9 @@ INT_PTR CALLBACK DialogPackage::SelectPluginDlgProc(HWND hWnd, UINT uMsg, WPARAM
 
 				bool x32 = LOWORD(wParam) == IDC_PACKAGESELECTPLUGIN_32BITBROWSE_BUTTON;
 
-				LOADED_IMAGE* loadedImage = ImageLoad(StringUtil::Narrow(buffer).c_str(), nullptr);
-				if (loadedImage)
+				WORD machine = 0U;
+				if (FileUtil::GetBinaryFileBitness(buffer, machine))
 				{
-					WORD machine = loadedImage->FileHeader->FileHeader.Machine;
-					ImageUnload(loadedImage);
-
 					if ((x32 && machine == IMAGE_FILE_MACHINE_I386) || (!x32 && machine == IMAGE_FILE_MACHINE_AMD64))
 					{
 						// Check if same name as other DLL

@@ -24,6 +24,7 @@
 #include "MeterButton.h"
 #include "MeterString.h"
 #include "MeasureScript.h"
+#include "MeasureSysInfo.h"
 #include "GeneralImage.h"
 #include "../Version.h"
 #include "../Common/PathUtil.h"
@@ -116,6 +117,8 @@ Skin::Skin(const std::wstring& folderPath, const std::wstring& file) : m_FolderP
 	m_BackgroundMode(BGMODE_IMAGE),
 	m_SolidAngle(),
 	m_SolidBevel(BEVELTYPE_NONE),
+	m_BevelColor(Gfx::Util::c_Transparent_Color_F),
+	m_BevelColor2(Gfx::Util::c_Transparent_Color_F),
 	m_OldWindowDraggable(false),
 	m_OldKeepOnScreen(false),
 	m_OldClickThrough(false),
@@ -275,12 +278,19 @@ void Skin::Initialize(bool hasSettings)
 	// Mark the window to ignore the Aero peek
 	IgnoreAeroPeek();
 
-	if (!m_Canvas.InitializeRenderTarget(m_Window))
+	LONG errCode = 0L;
+	if (!m_Canvas.InitializeRenderTarget(m_Window, &errCode))
 	{
-		LogErrorF(this, L"Could not intialize the render target.");
+		LogErrorF(this, L"Initialize: Could not initialize the render target.");
 
 		//Unload skin to prevent crashes
 		Deactivate();
+	}
+
+	if (errCode != 0L)
+	{
+		_com_error err(errCode);
+		LogErrorF(this, L"Initialize: Com Error: %s (0x%08x)", err.ErrorMessage(), errCode);
 	}
 
 	Refresh(true, true);
@@ -1640,7 +1650,7 @@ void Skin::UpdateMeasure(const std::wstring& name, bool group)
 	{
 		if (all || CompareName((*i), measure, group))
 		{
-			if (bNetStats && (*i)->GetTypeID() == TypeID<MeasureNet>())
+			if (bNetStats && IsNetworkMeasure((*i)))
 			{
 				MeasureNet::UpdateIFTable();
 				MeasureNet::UpdateStats();
@@ -1750,6 +1760,13 @@ void Skin::SetOption(const std::wstring& section, const std::wstring& option, co
 
 		// Is it a style?
 	}
+}
+
+void Skin::SetZPosVariable(ZPOSITION zPos)
+{
+	WCHAR buffer[32];
+	_itow_s(zPos, buffer, 10);
+	m_Parser.SetBuiltInVariable(L"CURRENTCONFIGZPOS", buffer);
 }
 
 /*
@@ -2149,8 +2166,9 @@ void Skin::ReadOptions(ConfigParser& parser, LPCWSTR section, bool isDefault)
 	isDefault ? writeDefaultInt(L"AlwaysOnTop", zPos) : addWriteFlag(OPTION_ALWAYSONTOP);
 	m_WindowZPosition = (zPos >= ZPOSITION_ONDESKTOP && zPos <= ZPOSITION_ONTOPMOST) ? (ZPOSITION)zPos : ZPOSITION_NORMAL;
 
-	int hideMode = parser.ReadInt(section, makeKey(L"HideOnMouseOver"), HIDEMODE_NONE);
-	if (isDefault) writeDefaultInt(L"HideOnMouseOver", hideMode);
+	int hideMode = parser.ReadInt(section, makeKey(L"HideOnMouseOver"), HIDEMODE_NONE);  // Deprecated
+	hideMode = parser.ReadInt(section, makeKey(L"OnHover"), hideMode);
+	if (isDefault) writeDefaultInt(L"OnHover", hideMode);
 	m_WindowHide = (hideMode >= HIDEMODE_NONE && hideMode <= HIDEMODE_FADEOUT) ? (HIDEMODE)hideMode : HIDEMODE_NONE;
 
 	m_WindowDraggable = parser.ReadBool(section, makeKey(L"Draggable"), true);
@@ -2196,6 +2214,9 @@ void Skin::ReadOptions(ConfigParser& parser, LPCWSTR section, bool isDefault)
 
 		// Set screen position variables temporarily
 		WindowToScreen();
+
+		// Set built-in "settings" variables
+		SetZPosVariable((ZPOSITION)zPos);
 	}
 }
 
@@ -2259,10 +2280,13 @@ void Skin::WriteOptions(INT setting)
 			WritePrivateProfileString(section, L"Draggable", m_WindowDraggable ? L"1" : L"0", iniFile);
 		}
 
-		if (setting & OPTION_HIDEONMOUSEOVER)
+		if (setting & OPTION_ONHOVER)
 		{
+			// "HideOnMouseOver" is now deprecated, remove the key
+			WritePrivateProfileString(section, L"HideOnMouseOver", nullptr, iniFile);
+
 			_itow_s(m_WindowHide, buffer, 10);
-			WritePrivateProfileString(section, L"HideOnMouseOver", buffer, iniFile);
+			WritePrivateProfileString(section, L"OnHover", buffer, iniFile);
 		}
 
 		if (setting & OPTION_SAVEPOSITION)
@@ -2379,6 +2403,8 @@ bool Skin::ReadSkin()
 
 	m_BackgroundMode = (BGMODE)m_Parser.ReadInt(L"Rainmeter", L"BackgroundMode", BGMODE_IMAGE);
 	m_SolidBevel = (BEVELTYPE)m_Parser.ReadInt(L"Rainmeter", L"BevelType", BEVELTYPE_NONE);
+	m_BevelColor = m_Parser.ReadColor(L"Rainmeter", L"BevelColor", D2D1::ColorF(D2D1::ColorF::White));
+	m_BevelColor2 = m_Parser.ReadColor(L"Rainmeter", L"BevelColor2", D2D1::ColorF(D2D1::ColorF::Black));
 
 	m_SolidColor = m_Parser.ReadColor(L"Rainmeter", L"SolidColor", D2D1::ColorF(D2D1::ColorF::Gray));
 	m_SolidColor2 = m_Parser.ReadColor(L"Rainmeter", L"SolidColor2", m_SolidColor);
@@ -2560,9 +2586,10 @@ bool Skin::ReadSkin()
 					m_Measures.push_back(measure);
 					m_Parser.AddMeasure(measure);
 
-					if (measure->GetTypeID() == TypeID<MeasureNet>())
+					if (IsNetworkMeasure(measure))
 					{
 						m_HasNetMeasures = true;
+						MeasureNet::UpdateIFTable();
 					}
 				}
 
@@ -2623,11 +2650,6 @@ bool Skin::ReadSkin()
 		Meter* meter = *iter;
 		meter->ReadOptions(m_Parser);
 		meter->Initialize();
-
-		if (!meter->GetToolTipText().empty())
-		{
-			meter->CreateToolTip(this);
-		}
 	}
 
 	// Initialize measures.
@@ -2889,15 +2911,15 @@ void Skin::Redraw()
 
 			if (m_SolidBevel != BEVELTYPE_NONE)
 			{
-				D2D1_COLOR_F lightColor = D2D1::ColorF(D2D1::ColorF::White);
-				D2D1_COLOR_F darkColor = D2D1::ColorF(D2D1::ColorF::Black);
+				D2D1_COLOR_F lightColor = m_BevelColor;
+				D2D1_COLOR_F darkColor = m_BevelColor2;
 
 				if (m_SolidBevel == BEVELTYPE_DOWN)
 				{
 					std::swap(lightColor, darkColor);
 				}
 
-				Meter::DrawBevel(m_Canvas, r, lightColor, darkColor);
+				Meter::DrawBevel(m_Canvas, r, lightColor, darkColor, false);
 			}
 		}
 
@@ -3324,7 +3346,7 @@ LRESULT Skin::OnTimer(UINT uMsg, WPARAM wParam, LPARAM lParam)
 				break;
 			}
 
-			ULONGLONG ticks = System::GetTickCount64();
+			ULONGLONG ticks = GetTickCount64();
 			if (m_FadeStartTime == 0)
 			{
 				m_FadeStartTime = ticks;
@@ -3858,16 +3880,32 @@ LRESULT Skin::OnCommand(UINT uMsg, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 
+	case IDM_SKIN_HIDEONMOUSE_NONE:
+		if (m_WindowHide != HIDEMODE_NONE)
+		{
+			SetWindowHide(HIDEMODE_NONE);
+		}
+		break;
+
 	case IDM_SKIN_HIDEONMOUSE:
-		SetWindowHide((m_WindowHide == HIDEMODE_NONE) ? HIDEMODE_HIDE : HIDEMODE_NONE);
+		if (m_WindowHide != HIDEMODE_HIDE)
+		{
+			SetWindowHide(HIDEMODE_HIDE);
+		}
 		break;
 
 	case IDM_SKIN_TRANSPARENCY_FADEIN:
-		SetWindowHide((m_WindowHide == HIDEMODE_NONE) ? HIDEMODE_FADEIN : HIDEMODE_NONE);
+		if (m_WindowHide != HIDEMODE_FADEIN)
+		{
+			SetWindowHide(HIDEMODE_FADEIN);
+		}
 		break;
 
 	case IDM_SKIN_TRANSPARENCY_FADEOUT:
-		SetWindowHide((m_WindowHide == HIDEMODE_NONE) ? HIDEMODE_FADEOUT : HIDEMODE_NONE);
+		if (m_WindowHide != HIDEMODE_FADEOUT)
+		{
+			SetWindowHide(HIDEMODE_FADEOUT);
+		}
 		break;
 
 	case IDM_SKIN_REMEMBERPOSITION:
@@ -4099,12 +4137,13 @@ void Skin::SetWindowHide(HIDEMODE hide)
 {
 	m_WindowHide = hide;
 	UpdateWindowTransparency(m_AlphaValue);
-	WriteOptions(OPTION_HIDEONMOUSEOVER);
+	WriteOptions(OPTION_ONHOVER);
 }
 
-void Skin::SetWindowZPosition(ZPOSITION zpos)
+void Skin::SetWindowZPosition(ZPOSITION zPos)
 {
-	ChangeSingleZPos(zpos);
+	SetZPosVariable(zPos);
+	ChangeSingleZPos(zPos);
 	WriteOptions(OPTION_ALWAYSONTOP);
 }
 
@@ -5420,4 +5459,10 @@ Meter* Skin::GetMeter(const std::wstring& meterName)
 		}
 	}
 	return nullptr;
+}
+
+bool Skin::IsNetworkMeasure(Measure* measure)
+{
+	return measure->GetTypeID() == TypeID<MeasureNet>() ||
+		measure->GetTypeID() == TypeID<MeasureSysInfo>();
 }
